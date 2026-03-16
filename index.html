@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Assistant (Flask Edition)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f0f0f;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h2 { color: #1D9E75; margin-bottom: 8px; }
+        .sub { color: #555; font-size: 12px; margin-bottom: 30px; }
+
+        #mic-btn {
+            width: 100px; height: 100px;
+            border-radius: 50%;
+            background: #1D9E75;
+            border: none;
+            cursor: pointer;
+            font-size: 40px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #mic-btn.listening {
+            background: #E24B4A;
+            animation: pulse 1s infinite;
+        }
+        #mic-btn.thinking {
+            background: #BA7517;
+            cursor: not-allowed;
+        }
+        @keyframes pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(226,75,74,0.5); }
+            100% { box-shadow: 0 0 0 25px rgba(226,75,74,0); }
+        }
+
+        #status { color: #888; font-size: 14px; margin-bottom: 25px; min-height: 20px; }
+
+        .label {
+            font-size: 11px; color: #444;
+            text-transform: uppercase; letter-spacing: 1px;
+            margin-bottom: 6px; width: 100%; max-width: 560px;
+        }
+        #question-box, #answer-box {
+            border-radius: 10px; padding: 14px;
+            width: 100%; max-width: 560px;
+            min-height: 60px; font-size: 15px;
+            line-height: 1.6; margin-bottom: 15px;
+        }
+        #question-box { background: #1a1a1a; border: 1px solid #2a2a2a; color: #bbb; }
+        #answer-box { background: #0d2e20; border: 1px solid #1D9E75; color: #7DCEA0; }
+
+        .divider {
+            width: 100%; max-width: 560px;
+            border-top: 1px solid #2a2a2a;
+            padding-top: 15px; margin-bottom: 15px;
+            text-align: center; font-size: 12px; color: #444;
+        }
+
+        #manual-row { display: flex; gap: 8px; width: 100%; max-width: 560px; }
+        #manual-input {
+            flex: 1; padding: 12px;
+            background: #1a1a1a; border: 1px solid #2a2a2a;
+            border-radius: 8px; color: white; outline: none;
+        }
+        #manual-input:focus { border-color: #1D9E75; }
+        #send-btn {
+            padding: 0 20px; background: #1D9E75;
+            color: white; border: none; border-radius: 8px; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Flask AI Assistant</h2>
+    <div class="sub">Backend: Flask | Frontend: HTML/JS</div>
+
+    <button id="mic-btn" onclick="toggleMic()">🎤</button>
+    <div id="status">Tap to speak</div>
+
+    <div class="label">You said:</div>
+    <div id="question-box">—</div>
+
+    <div class="label">AI Response:</div>
+    <div id="answer-box">—</div>
+
+    <div class="divider">OR TYPE MANUALLY</div>
+
+    <div id="manual-row">
+        <input type="text" id="manual-input" placeholder="Ask me anything...">
+        <button id="send-btn" onclick="sendText()">Send</button>
+    </div>
+
+    <script>
+        const FLASK_URL = "http://127.0.0.1:5000/api/chat";
+        let recognition;
+        let isListening = false;
+
+        // 1. Initialize Speech Recognition
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                setBtn('listening', '⏹');
+                setStatus("Listening...");
+            };
+
+            recognition.onresult = (event) => {
+                const text = event.results[0][0].transcript;
+                document.getElementById('question-box').innerText = text;
+                askAI(text);
+            };
+
+            recognition.onend = () => {
+                resetBtn();
+                isListening = false;
+            };
+        }
+
+        function toggleMic() {
+            if (isListening) { recognition.stop(); } 
+            else { recognition.start(); isListening = true; }
+        }
+
+        // 2. Main API Call Function
+        async function askAI(text) {
+            setBtn('thinking', '⏳');
+            setStatus("Thinking...");
+            
+            try {
+                const response = await fetch(FLASK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+
+                const data = await response.json();
+                
+                if (data.choices) {
+                    const reply = data.choices[0].message.content;
+                    document.getElementById('answer-box').innerText = reply;
+                    speak(reply);
+                } else {
+                    document.getElementById('answer-box').innerText = "Error: Check your API Key in app.py";
+                }
+            } catch (err) {
+                document.getElementById('answer-box').innerText = "Flask Server not running!";
+            }
+            resetBtn();
+        }
+
+        // 3. Text-to-Speech
+        function speak(text) {
+            const synth = window.speechSynthesis;
+            const utter = new SpeechSynthesisUtterance(text);
+            synth.speak(utter);
+        }
+
+        // 4. Manual Text Helpers
+        function sendText() {
+            const val = document.getElementById('manual-input').value;
+            if(!val) return;
+            document.getElementById('question-box').innerText = val;
+            document.getElementById('manual-input').value = '';
+            askAI(val);
+        }
+
+        // UI Helpers
+        function setStatus(msg) { document.getElementById('status').innerText = msg; }
+        function setBtn(cls, icon) {
+            const btn = document.getElementById('mic-btn');
+            btn.className = cls;
+            btn.innerText = icon;
+        }
+        function resetBtn() {
+            setBtn('', '🎤');
+            setStatus("Tap to speak");
+        }
+    </script>
+</body>
+</html>
